@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sentinel-2 Land Type Classifier</title>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a, #1e293b);
+      --card-bg: #020617;
+      --card-border: #1e293b;
+      --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.15);
+      --accent-strong: #0ea5e9;
+      --danger: #f97373;
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --shadow-soft: 0 20px 40px rgba(15, 23, 42, 0.8);
+      --radius-lg: 18px;
+      --radius-sm: 10px;
+      --transition-fast: 0.18s ease-out;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: var(--bg-gradient);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text-main);
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 1280px;
+      margin: 24px;
+      padding: 24px;
+      border-radius: 24px;
+      background: radial-gradient(circle at top left, rgba(56,189,248,0.1), transparent 50%),
+                  radial-gradient(circle at bottom right, rgba(34,197,94,0.1), transparent 50%),
+                  rgba(15,23,42,0.95);
+      box-shadow: var(--shadow-soft);
+      border: 1px solid rgba(148,163,184,0.2);
+      backdrop-filter: blur(10px);
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .header-left h1 {
+      margin: 0;
+      font-size: 1.8rem;
+      letter-spacing: 0.03em;
+    }
+
+    .header-left p {
+      margin: 6px 0 0;
+      color: var(--text-muted);
+      font-size: 0.92rem;
+    }
+
+    .header-badge {
+      font-size: 0.75rem;
+      color: var(--accent);
+      border-radius: 999px;
+      border: 1px solid rgba(56,189,248,0.4);
+      padding: 4px 10px;
+      background: rgba(15,23,42,0.8);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+      gap: 18px;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--card-border);
+      padding: 18px 18px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top left, rgba(56,189,248,0.1), transparent 55%);
+      opacity: 0;
+      transition: opacity var(--transition-fast);
+      pointer-events: none;
+    }
+
+    .card:hover::before {
+      opacity: 1;
+    }
+
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card h2 span.tag {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(148,163,184,0.1);
+      color: var(--text-muted);
+      border: 1px solid rgba(148,163,184,0.3);
+    }
+
+    .help-text {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .help-text.small-top {
+      margin-top: 4px;
+      margin-bottom: 10px;
+    }
+
+    .file-input-wrapper {
+      border-radius: var(--radius-lg);
+      border: 1px dashed rgba(148,163,184,0.5);
+      background: rgba(15,23,42,0.85);
+      padding: 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color var(--transition-fast),
+                  background var(--transition-fast);
+      cursor: pointer;
+    }
+
+    .file-input-wrapper:hover {
+      border-color: var(--accent);
+      background: rgba(15,23,42,0.95);
+    }
+
+    .file-input-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .file-input-row label {
+      font-size: 0.9rem;
+      flex: 0 0 auto;
+    }
+
+    #file-name {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      text-align: right;
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    .file-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      border-radius: 999px;
+      padding: 6px 12px;
+      border: 1px solid rgba(148,163,184,0.6);
+      background: rgba(15,23,42,0.9);
+      cursor: pointer;
+      transition: border-color var(--transition-fast),
+                  background var(--transition-fast),
+                  transform var(--transition-fast);
+    }
+
+    .file-btn:hover {
+      border-color: var(--accent);
+      background: rgba(15,23,42,1);
+      transform: translateY(-1px);
+    }
+
+    /* Small RGB preview under the file input */
+    .upload-preview-container {
+      margin-top: 10px;
+      margin-bottom: 6px;
+      border-radius: 12px;
+      border: 1px solid #1e293b;
+      overflow: hidden;
+      background: #020617;
+    }
+
+    .upload-preview-header {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      padding: 6px 10px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .upload-preview-container img {
+      display: block;
+      width: 100%;
+      max-height: 220px;
+      object-fit: cover;
+    }
+
+    .model-choice {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .pill-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      background: rgba(15,23,42,0.8);
+      transition: border-color var(--transition-fast),
+                  background var(--transition-fast),
+                  color var(--transition-fast),
+                  transform var(--transition-fast);
+    }
+
+    .pill-option input {
+      accent-color: var(--accent);
+    }
+
+    .pill-option:hover {
+      border-color: var(--accent);
+      color: var(--text-main);
+      transform: translateY(-1px);
+    }
+
+    .pill-option input[type="radio"] {
+      transform: scale(0.9);
+    }
+
+    .actions {
+      margin-top: 14px;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .primary-btn {
+      position: relative;
+      overflow: hidden;
+      border-radius: 999px;
+      border: none;
+      padding: 9px 18px;
+      font-size: 0.92rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: #0b1120;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      transition: transform 0.16s ease-out, box-shadow 0.16s ease-out;
+      box-shadow: 0 8px 20px rgba(56,189,248,0.35);
+    }
+
+    .primary-btn span.icon {
+      font-size: 1.1rem;
+      transition: transform 0.18s ease-out;
+    }
+
+    .primary-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(56,189,248,0.45);
+    }
+
+    .primary-btn:hover span.icon {
+      transform: translateX(2px);
+    }
+
+    .primary-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 6px 14px rgba(56,189,248,0.3);
+    }
+
+    .error {
+      margin-top: 12px;
+      font-size: 0.8rem;
+      color: var(--danger);
+      background: rgba(248, 113, 113, 0.12);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      border: 1px solid rgba(248, 113, 113, 0.4);
+    }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .results-header .filename {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .model-results-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 16px;
+      align-items: flex-start;
+    }
+
+    @media (max-width: 700px) {
+      .model-results-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .model-card {
+      background: rgba(15,23,42,0.9);
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(148,163,184,0.25);
+      padding: 14px 16px 14px;
+      overflow: hidden;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .model-card h3 {
+      margin: 0 0 4px;
+      font-size: 1rem;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      color: var(--text-muted);
+    }
+
+    .predicted-class {
+      font-size: 0.9rem;
+      margin: 2px 0 8px;
+    }
+
+    .predicted-class span.label {
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+
+    .predicted-class span.value {
+      color: var(--accent-strong);
+      font-weight: 600;
+    }
+
+    .probs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      margin-top: 4px;
+      table-layout: fixed;
+    }
+
+    .probs-table th,
+    .probs-table td {
+      padding: 4px 4px;
+      text-align: left;
+      overflow: hidden;
+    }
+
+    .probs-table th {
+      color: var(--text-muted);
+      border-bottom: 1px solid rgba(148,163,184,0.4);
+    }
+
+    .probs-table tr:nth-child(even) {
+      background: rgba(15,23,42,0.7);
+    }
+
+    .probs-table th:nth-child(1),
+    .probs-table td:nth-child(1) {
+      width: 48%;
+      white-space: nowrap;
+      padding-right: 10px;
+    }
+
+    .probs-table th:nth-child(2),
+    .probs-table td:nth-child(2) {
+      width: 18%;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .probs-table th:nth-child(3),
+    .probs-table td:nth-child(3) {
+      width: 34%;
+    }
+
+    .prob-bar-wrapper {
+      position: relative;
+      width: 100%;
+      height: 16px;
+      border-radius: 999px;
+      background: rgba(30,64,175,0.35);
+      overflow: hidden;
+    }
+
+    .prob-bar {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+      transition: width 0.5s ease-out;
+    }
+
+    .prob-value {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .footer-note {
+      margin-top: 10px;
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    .footer-note span {
+      color: var(--accent);
+    }
+
+    .map-card {
+      margin-top: 20px;
+    }
+
+    .map-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.35fr);
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    @media (max-width: 900px) {
+      .map-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .map-wrapper {
+      position: relative;
+      width: 100%;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid rgba(148,163,184,0.3);
+      background: #020617;
+    }
+
+    #leaflet-map {
+      width: 100%;
+      height: 460px;
+    }
+
+    .map-click-info {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .map-click-info span {
+      color: var(--accent);
+    }
+
+    .map-prediction-title {
+      margin: 0 0 4px;
+      font-size: 1rem;
+    }
+
+    .leaflet-container {
+      background: #020617;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="header">
+      <div class="header-left">
+        <h1>Sentinel-2 Land Type Classifier</h1>
+        <p>
+          Upload a 13-band <strong>.tif</strong> patch or click on the scene map
+          and classify it using CNN_V2 and VGG16_V2.
+        </p>
+      </div>
+      <div class="header-badge">
+        13-Band EuroSAT • Demo UI
+      </div>
+    </header>
+
+    <div class="layout">
+      <!-- LEFT: Upload -->
+      <section class="card">
+        <h2>
+          Upload Patch
+          <span class="tag">Step 1</span>
+        </h2>
+        <p class="help-text">
+          Select a pre-cropped Sentinel-2 patch (64×64 or larger) with 13 spectral bands.
+          The app will resize and normalize it using the same pipeline you used for training.
+        </p>
+
+        <form method="POST" enctype="multipart/form-data" id="upload-form">
+          <input type="hidden" name="source" value="upload">
+
+          <label class="file-input-wrapper" for="file-input">
+            <div class="file-input-row">
+              <label for="file-input">Patch (.tif)</label>
+              <div class="file-btn" type="button">
+                <span>Browse</span>
+                <span>📁</span>
+              </div>
+            </div>
+            <div id="file-name">
+              {% if upload_filename %}
+                {{ upload_filename }}
+              {% else %}
+                No file selected
+              {% endif %}
+            </div>
+            <input id="file-input" type="file" name="file" accept=".tif" required>
+          </label>
+
+          {% if upload_preview_url %}
+          <div class="upload-preview-container">
+            <div class="upload-preview-header">
+              Uploaded image (RGB preview)
+            </div>
+            <img src="{{ upload_preview_url }}"
+                 alt="Uploaded TIF preview">
+          </div>
+          {% endif %}
+
+          <div class="model-choice">
+            <label class="pill-option">
+              <input type="radio" name="model_choice" value="both"
+                     {% if upload_model_choice == 'both' %}checked{% endif %}>
+              <span>Both models</span>
+            </label>
+            <label class="pill-option">
+              <input type="radio" name="model_choice" value="cnn"
+                     {% if upload_model_choice == 'cnn' %}checked{% endif %}>
+              <span>CNN_V2 only</span>
+            </label>
+            <label class="pill-option">
+              <input type="radio" name="model_choice" value="vgg"
+                     {% if upload_model_choice == 'vgg' %}checked{% endif %}>
+              <span>VGG16_V2 only</span>
+            </label>
+          </div>
+
+          {% if error %}
+          <div class="error">
+            {{ error }}
+          </div>
+          {% endif %}
+
+          <div class="actions">
+            <button type="submit" class="primary-btn">
+              <span>Upload & Predict</span>
+              <span class="icon">➜</span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- RIGHT: Upload Predictions -->
+      <section class="card">
+        <h2>
+          Upload Predictions
+          <span class="tag">Step 2</span>
+        </h2>
+        <p class="help-text">
+          After uploading, you’ll see the top-1 predictions and full class probabilities here.
+        </p>
+
+        {% if upload_filename %}
+        <div class="results-header">
+          <div>
+            <div class="filename">
+              File:&nbsp;<strong>{{ upload_filename }}</strong>
+            </div>
+            <div class="filename">
+              Mode:&nbsp;
+              {% if upload_model_choice == 'both' %}
+                <strong>Both models</strong>
+              {% elif upload_model_choice == 'cnn' %}
+                <strong>CNN_V2 only</strong>
+              {% else %}
+                <strong>VGG16_V2 only</strong>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="model-results-grid">
+          {% if upload_class_cnn and upload_probs_cnn %}
+          <div class="model-card" id="cnn-upload-card">
+            <h3>CNN_V2 <span class="badge">Test Acc ~92.85%</span></h3>
+            <div class="predicted-class">
+              <span class="label">Predicted class:</span>
+              <span class="value">{{ upload_class_cnn }}</span>
+            </div>
+            <table class="probs-table">
+              <thead>
+                <tr>
+                  <th>Class</th>
+                  <th>Prob.</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cls, prob in upload_probs_cnn %}
+                <tr>
+                  <td>{{ cls }}</td>
+                  <td class="prob-value">{{ "{:.3f}".format(prob) }}</td>
+                  <td>
+                    <div class="prob-bar-wrapper">
+                      <div class="prob-bar" style="width: {{ (prob * 100)|round(1) }}%;"></div>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+
+          {% if upload_class_vgg and upload_probs_vgg %}
+          <div class="model-card" id="vgg-upload-card">
+            <h3>VGG16_V2 <span class="badge">Test Acc ~94.89%</span></h3>
+            <div class="predicted-class">
+              <span class="label">Predicted class:</span>
+              <span class="value">{{ upload_class_vgg }}</span>
+            </div>
+            <table class="probs-table">
+              <thead>
+                <tr>
+                  <th>Class</th>
+                  <th>Prob.</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cls, prob in upload_probs_vgg %}
+                <tr>
+                  <td>{{ cls }}</td>
+                  <td class="prob-value">{{ "{:.3f}".format(prob) }}</td>
+                  <td>
+                    <div class="prob-bar-wrapper">
+                      <div class="prob-bar" style="width: {{ (prob * 100)|round(1) }}%;"></div>
+                      </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        </div>
+        {% else %}
+        <p class="help-text">
+          No upload prediction yet. Upload a patch on the left and hit
+          <strong>Upload &amp; Predict</strong> to see results here.
+        </p>
+        {% endif %}
+
+        <div class="footer-note">
+          CNN_V2 Test Acc: <span>0.9285</span> •
+          VGG16_V2 Test Acc: <span>0.9489</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- MAP CARD -->
+    <section class="card map-card" id="map-section">
+      <h2>
+        Scene Map (Optional)
+        <span class="tag">Click to classify</span>
+      </h2>
+
+      <div class="map-layout">
+        <!-- LEFT: Map + description -->
+        <div>
+          <p class="help-text">
+            This is a Sentinel-2 scene (RGB preview). Click anywhere on the image to extract a
+            64×64 patch from <strong>SCENE_13BANDS.tif</strong> and classify it using the selected model(s).
+          </p>
+
+          <div class="map-wrapper">
+            <div id="leaflet-map"></div>
+          </div>
+
+          <p class="map-click-info">
+            Last click:
+            <span id="click-info">
+              {% if map_clicked_lat is not none and map_clicked_lon is not none %}
+                lat={{ "%.4f"|format(map_clicked_lat) }}, lon={{ "%.4f"|format(map_clicked_lon) }}
+              {% else %}
+                none
+              {% endif %}
+            </span>
+          </p>
+
+          <!-- Hidden form used for map clicks -->
+          <form id="map-form" method="POST">
+            <input type="hidden" name="source" value="click">
+            <input type="hidden" name="click_lat" id="click-lat">
+            <input type="hidden" name="click_lon" id="click-lon">
+            <input type="hidden" name="model_choice" id="map-model-choice" value="both">
+          </form>
+        </div>
+
+        <!-- RIGHT: Map Predictions -->
+        <div>
+          <h3 class="map-prediction-title">Map Predictions</h3>
+
+          {% if map_clicked_lat is not none and map_clicked_lon is not none %}
+          <p class="help-text small-top">
+            Last map click at
+            <strong>lat={{ "%.4f"|format(map_clicked_lat) }}, lon={{ "%.4f"|format(map_clicked_lon) }}</strong>
+            using
+            {% if map_model_choice == 'both' %}
+              <strong>both models</strong>.
+            {% elif map_model_choice == 'cnn' %}
+              <strong>CNN_V2 only</strong>.
+            {% else %}
+              <strong>VGG16_V2 only</strong>.
+            {% endif %}
+          </p>
+          {% else %}
+          <p class="help-text small-top">
+            Click on the map to classify a 64×64 patch centered at that location.
+          </p>
+          {% endif %}
+
+          {% if map_class_cnn or map_class_vgg %}
+          <div class="model-results-grid">
+            {% if map_class_cnn and map_probs_cnn %}
+            <div class="model-card" id="cnn-map-card">
+              <h3>CNN_V2 (Map)</h3>
+              <div class="predicted-class">
+                <span class="label">Predicted class:</span>
+                <span class="value">{{ map_class_cnn }}</span>
+              </div>
+              <table class="probs-table">
+                <thead>
+                  <tr>
+                    <th>Class</th>
+                    <th>Prob.</th>
+                    <th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for cls, prob in map_probs_cnn %}
+                  <tr>
+                    <td>{{ cls }}</td>
+                    <td class="prob-value">{{ "{:.3f}".format(prob) }}</td>
+                    <td>
+                      <div class="prob-bar-wrapper">
+                        <div class="prob-bar" style="width: {{ (prob * 100)|round(1) }}%;"></div>
+                      </div>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+
+            {% if map_class_vgg and map_probs_vgg %}
+            <div class="model-card" id="vgg-map-card">
+              <h3>VGG16_V2 (Map)</h3>
+              <div class="predicted-class">
+                <span class="label">Predicted class:</span>
+                <span class="value">{{ map_class_vgg }}</span>
+              </div>
+              <table class="probs-table">
+                <thead>
+                  <tr>
+                    <th>Class</th>
+                    <th>Prob.</th>
+                    <th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for cls, prob in map_probs_vgg %}
+                  <tr>
+                    <td>{{ cls }}</td>
+                    <td class="prob-value">{{ "{:.3f}".format(prob) }}</td>
+                    <td>
+                      <div class="prob-bar-wrapper">
+                        <div class="prob-bar" style="width: {{ (prob * 100)|round(1) }}%;"></div>
+                      </div>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% endif %}
+          </div>
+          {% else %}
+          <p class="help-text">
+            No map prediction yet. Click anywhere inside the scene to classify.
+          </p>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin="">
+  </script>
+
+  <script>
+    const fileInput = document.getElementById("file-input");
+    const fileNameLabel = document.getElementById("file-name");
+    const uploadForm = document.getElementById("upload-form");
+
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        if (fileInput.files.length > 0) {
+          fileNameLabel.textContent = fileInput.files[0].name;
+        } else {
+          fileNameLabel.textContent = "No file selected";
+        }
+      });
+    }
+
+    if (uploadForm) {
+      uploadForm.addEventListener("submit", function () {
+        const btn = uploadForm.querySelector(".primary-btn");
+        if (btn) {
+          btn.disabled = true;
+          btn.style.opacity = "0.8";
+          const icon = btn.querySelector("span.icon");
+          if (icon) icon.textContent = "⏳";
+        }
+      });
+    }
+
+    const hasMapClick = {{ 'true' if map_clicked_lat is not none else 'false' }};
+
+    // Animate probability bars on load + scroll to map only after a map click
+    window.addEventListener("load", function () {
+      const bars = document.querySelectorAll(".prob-bar");
+      bars.forEach(bar => {
+        const width = bar.style.width;
+        bar.style.width = "0%";
+        setTimeout(() => { bar.style.width = width; }, 50);
+      });
+
+      if (hasMapClick) {
+        const mapSection = document.getElementById("map-section");
+        if (mapSection) {
+          mapSection.scrollIntoView({ behavior: "auto", block: "start" });
+        }
+      }
+    });
+
+    // --- Leaflet map setup ---
+    const sceneMeta = {{ scene_meta|tojson if scene_meta else 'null' }};
+    const clickInfoEl = document.getElementById("click-info");
+    const clickLatInput = document.getElementById("click-lat");
+    const clickLonInput = document.getElementById("click-lon");
+    const mapForm = document.getElementById("map-form");
+
+    if (sceneMeta && sceneMeta.minx !== undefined) {
+      const bounds = L.latLngBounds(
+        [sceneMeta.miny, sceneMeta.minx],
+        [sceneMeta.maxy, sceneMeta.maxx]
+      );
+
+      const map = L.map("leaflet-map", {
+        zoomControl: true,
+        attributionControl: true,
+        scrollWheelZoom: true,
+        dragging: true,
+        maxBounds: bounds,
+        maxBoundsViscosity: 1.0
+      });
+
+      map.fitBounds(bounds);
+
+      // start zoomed in by 1 level
+      const initialZoom = map.getZoom();
+      map.setZoom(initialZoom + 1, { animate: false });
+
+      const overlayUrl = "{{ url_for('static', filename='scene_rgb.jpg') }}";
+      L.imageOverlay(overlayUrl, bounds, { opacity: 1.0 }).addTo(map);
+
+      // labels-only tile layer
+      map.createPane("labels");
+      const labelsPane = map.getPane("labels");
+      labelsPane.style.zIndex = 650;
+      labelsPane.style.pointerEvents = "none";
+
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+        {
+          pane: "labels",
+          maxZoom: 19,
+          attribution: "© OpenStreetMap contributors, © CARTO"
+        }
+      ).addTo(map);
+
+      map.on("click", function (e) {
+        const lat = e.latlng.lat;
+        const lon = e.latlng.lng;
+
+        if (clickLatInput && clickLonInput) {
+          clickLatInput.value = lat.toFixed(6);
+          clickLonInput.value = lon.toFixed(6);
+        }
+        if (clickInfoEl) {
+          clickInfoEl.textContent = `lat=${lat.toFixed(4)}, lon=${lon.toFixed(4)}`;
+        }
+
+        const selectedModel = document.querySelector('input[name="model_choice"]:checked');
+        const mapModelChoice = document.getElementById("map-model-choice");
+        if (mapModelChoice) {
+          mapModelChoice.value = selectedModel ? selectedModel.value : "both";
+        }
+
+        mapForm.submit();
+      });
+
+    } else {
+      const mapDiv = document.getElementById("leaflet-map");
+      if (mapDiv) {
+        mapDiv.innerHTML =
+          "<div style='padding:10px;font-size:0.85rem;color:#9ca3af;'>Scene metadata not available. Make sure <code>SCENE_13BANDS.tif</code> exists.</div>";
+      }
+    }
+  </script>
+</body>
+</html>
