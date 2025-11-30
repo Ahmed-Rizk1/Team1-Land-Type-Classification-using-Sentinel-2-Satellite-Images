@@ -21,8 +21,8 @@ All trained models are available here:
 
 | Model                  | File Name           | Size   | Accuracy | Description                     |
 |------------------------|------------------|--------|----------|---------------------------------|
-| VGG16 Transfer Learning | model_vgg16.keras | ~500MB | 93%      | Final production-ready classifier |
-| Baseline CNN           | model_baseline.keras | ~50MB  | 88%      | Custom CNN baseline model        |
+| VGG16 Transfer Learning | model_vgg16.keras | ~500MB | 94.8888889%      | Final production-ready classifier |
+| Baseline CNN           | model_baseline.keras | ~50MB  | 92.8518518%      | Custom CNN baseline model        |
 
 ---
 
